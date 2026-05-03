@@ -23,11 +23,11 @@ class RAGPipeline:
         # 1. Retrieve
         query_vector = self.embedder.encode([query_text])[0]
         try:
-            search_result = self.qdrant.search(
+            search_result = self.qdrant.query_points(
                 collection_name=self.collection_name,
-                query_vector=query_vector.tolist(),
+                query=query_vector.tolist(),
                 limit=k
-            )
+            ).points
         except Exception as e:
             search_result = []
             print(f"Retrieval error: {e}")

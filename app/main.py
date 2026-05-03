@@ -1,6 +1,9 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import List, Dict, Any
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from app.rag.pipeline import RAGPipeline
 

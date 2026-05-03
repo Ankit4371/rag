@@ -21,8 +21,9 @@ def main():
         for line in f:
             corpus.append(json.loads(line))
             
-    # For testing speed we can limit this if requested, but we'll run full 25k
-    print(f"Loaded {len(corpus)} documents.")
+    # Limit to 500 documents for rapid local testing on CPU
+    corpus = corpus[:500]
+    print(f"Loaded {len(corpus)} documents (truncated for speed).")
     
     print("Building BM25S index...")
     bm25 = BM25Index()

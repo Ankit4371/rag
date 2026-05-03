@@ -16,6 +16,7 @@ dependencies = [
     "ragas",
     "datasets",
     "tiktoken",
+    "python-dotenv",
 ]
 
 [project.optional-dependencies]
