@@ -9,11 +9,17 @@ class RAGPipeline:
     def __init__(self):
         self.embedder = BGEEmbedder()
         # Initialize Qdrant assuming we already built it
-        db_path = "data/qdrant_db"
-        if not os.path.exists(db_path):
-            os.makedirs(db_path, exist_ok=True)
+        qdrant_url = os.getenv("QDRANT_URL")
+        qdrant_api_key = os.getenv("QDRANT_API_KEY")
+        
+        if qdrant_url and qdrant_api_key:
+            self.qdrant = QdrantClient(url=qdrant_url, api_key=qdrant_api_key)
+        else:
+            db_path = "data/qdrant_db"
+            if not os.path.exists(db_path):
+                os.makedirs(db_path, exist_ok=True)
+            self.qdrant = QdrantClient(path=db_path)
             
-        self.qdrant = QdrantClient(path=db_path)
         self.generator = GroqGenerator()
         self.collection_name = "rag_docs"
         
