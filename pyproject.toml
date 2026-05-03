@@ -15,6 +15,7 @@ dependencies = [
     "google-generativeai",
     "ragas",
     "datasets",
+    "tiktoken",
 ]
 
 [project.optional-dependencies]

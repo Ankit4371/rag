@@ -2844,6 +2844,7 @@ dependencies = [
     { name = "qdrant-client" },
     { name = "ragas" },
     { name = "sentence-transformers" },
+    { name = "tiktoken" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -2870,6 +2871,7 @@ requires-dist = [
     { name = "ragas" },
     { name = "ruff", marker = "extra == 'dev'" },
     { name = "sentence-transformers" },
+    { name = "tiktoken" },
     { name = "uvicorn", extras = ["standard"] },
 ]
 provides-extras = ["dev"]
