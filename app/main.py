@@ -1,7 +1,10 @@
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import List, Dict, Any
 from dotenv import load_dotenv
+import os
 
 load_dotenv()
 
@@ -12,6 +15,12 @@ app = FastAPI(
     description="Production-grade Advanced RAG System",
     version="1.0.0",
 )
+
+# Ensure static directory exists
+os.makedirs("static", exist_ok=True)
+
+# Mount static files
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 pipeline = None
 
@@ -28,6 +37,10 @@ class QueryResponse(BaseModel):
     answer: str
     sources: List[Dict[str, Any]]
     latency_ms: int
+
+@app.get("/")
+def read_root():
+    return FileResponse("static/index.html")
 
 @app.get("/health")
 def health_check():
