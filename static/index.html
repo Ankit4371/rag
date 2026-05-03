@@ -46,7 +46,17 @@
                 <label class="switch-wrapper">
                     <input type="checkbox" id="toggle-compression">
                     <span class="switch"></span>
-                    <span class="label">Context Compression (LLMLingua)</span>
+                    <span class="label">Context Compression</span>
+                </label>
+                <label class="switch-wrapper">
+                    <input type="checkbox" id="toggle-hyde">
+                    <span class="switch"></span>
+                    <span class="label">HyDE</span>
+                </label>
+                <label class="switch-wrapper">
+                    <input type="checkbox" id="toggle-multi-query">
+                    <span class="switch"></span>
+                    <span class="label">Multi-Query</span>
                 </label>
                 <span class="options-divider"></span>
                 <label class="switch-wrapper">
@@ -114,8 +124,40 @@
             search: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>',
             rerank: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>',
             compress: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 14 10 14 10 20"></polyline><polyline points="20 10 14 10 14 4"></polyline><line x1="14" y1="10" x2="21" y2="3"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>',
-            generate: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>'
+            generate: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>',
+            rewrite: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>'
         };
+
+        // Lightweight markdown-to-HTML renderer (no external deps)
+        function renderMarkdown(text) {
+            if (!text) return '';
+            let html = text
+                // Escape HTML
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                // Headers: ### h3, ## h2 (must come before bold)
+                .replace(/^####\s+(.+)$/gm, '<h4 style="font-size:1rem;color:#e2e8f0;margin:1rem 0 0.5rem;">$1</h4>')
+                .replace(/^###\s+(.+)$/gm, '<h4 style="font-size:1.05rem;color:#e2e8f0;margin:1rem 0 0.5rem;">$1</h4>')
+                .replace(/^##\s+(.+)$/gm, '<h3 style="font-size:1.1rem;color:var(--accent);margin:1.2rem 0 0.5rem;">$1</h3>')
+                // Bold: **text**
+                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                // Italic: *text* (not inside bold)
+                .replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>')
+                // Inline code: `code`
+                .replace(/`(.+?)`/g, '<code style="background:rgba(59,130,246,0.15);padding:0.1em 0.4em;border-radius:4px;font-size:0.9em;">$1</code>')
+                // Citation highlights: [Source N]
+                .replace(/\[Source\s*(\d+)\]/g, '<span class="citation">[Source $1]</span>')
+                // Numbered lists: 1. item
+                .replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>')
+                // Bullet lists: lines starting with - or *
+                .replace(/^[\-\*]\s+(.+)$/gm, '<li>$1</li>')
+                // Wrap consecutive <li> in <ul>
+                .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
+                // Paragraphs: double newlines
+                .replace(/\n\n+/g, '</p><p>')
+                // Single newlines
+                .replace(/\n/g, '<br>');
+            return '<p>' + html + '</p>';
+        }
 
         function renderTrace(trace) {
             traceTimeline.innerHTML = '';
@@ -181,7 +223,9 @@
                         query,
                         use_hybrid: document.getElementById('toggle-hybrid').checked,
                         use_reranker: document.getElementById('toggle-reranker').checked,
-                        use_compression: document.getElementById('toggle-compression').checked
+                        use_compression: document.getElementById('toggle-compression').checked,
+                        use_hyde: document.getElementById('toggle-hyde').checked,
+                        use_multi_query: document.getElementById('toggle-multi-query').checked
                     })
                 });
                 
@@ -198,13 +242,22 @@
                 }
 
                 // 2. Populate Answer
-                answerText.innerHTML = data.answer.replace(/\n/g, '<br>');
+                answerText.innerHTML = renderMarkdown(data.answer);
                 
                 const usedReranker = document.getElementById('toggle-reranker').checked;
                 const usedCompression = document.getElementById('toggle-compression').checked;
+                const usedHyde = document.getElementById('toggle-hyde').checked;
+                const usedMultiQuery = document.getElementById('toggle-multi-query').checked;
                 
-                let pipelinePath = ["Dense Retrieval"];
-                if (usedReranker) pipelinePath.push("Cross-Encoder");
+                let pipelinePath = [];
+                if (usedHyde || usedMultiQuery) {
+                    let rw = [];
+                    if (usedHyde) rw.push("HyDE");
+                    if (usedMultiQuery) rw.push("Multi-Query");
+                    pipelinePath.push(rw.join("+"));
+                }
+                pipelinePath.push("Dense Retrieval");
+                if (usedReranker) pipelinePath.push("Reranker");
                 if (usedCompression) pipelinePath.push("Compression");
                 
                 latencyText.textContent = `Generated in ${data.latency_ms}ms using ${pipelinePath.join(' → ')}`;

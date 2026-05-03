@@ -35,6 +35,8 @@ class QueryRequest(BaseModel):
     use_hybrid: bool = True
     use_reranker: bool = True
     use_compression: bool = False
+    use_hyde: bool = False
+    use_multi_query: bool = False
     
 class QueryResponse(BaseModel):
     answer: str
@@ -57,7 +59,9 @@ def query_endpoint(req: QueryRequest):
         req.query,
         use_hybrid=req.use_hybrid,
         use_reranker=req.use_reranker,
-        use_compression=req.use_compression
+        use_compression=req.use_compression,
+        use_hyde=req.use_hyde,
+        use_multi_query=req.use_multi_query
     )
     # Remove raw_contexts from API response (keep trace)
     res.pop("raw_contexts", None)

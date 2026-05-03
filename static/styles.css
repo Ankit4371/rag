@@ -439,6 +439,36 @@ h1 {
     border-radius: 100px;
 }
 
+/* Citation badges in answer text */
+.citation {
+    color: var(--accent);
+    font-weight: 600;
+    font-size: 0.85em;
+    background: rgba(59, 130, 246, 0.1);
+    padding: 0.1em 0.4em;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+
+#answer-text strong {
+    color: #f1f5f9;
+    font-weight: 600;
+}
+
+#answer-text ul {
+    margin: 0.5rem 0;
+    padding-left: 1.5rem;
+}
+
+#answer-text li {
+    margin-bottom: 0.3rem;
+    line-height: 1.6;
+}
+
+#answer-text p {
+    margin-bottom: 0.75rem;
+}
+
 /* --- Sources --- */
 .sources-container {
     animation: fadeInUp 0.6s ease-out 0.2s both;

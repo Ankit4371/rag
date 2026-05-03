@@ -45,42 +45,90 @@ class RAGPipeline:
         from app.rag.compressor import ContextCompressor
         self.compressor = ContextCompressor()
         
-    def query(self, query_text: str, k: int = 5, use_hybrid: bool = True, use_reranker: bool = True, use_compression: bool = False) -> Dict[str, Any]:
+        from app.rag.rewriter import QueryRewriter
+        self.rewriter = QueryRewriter()
+        
+    def query(self, query_text: str, k: int = 5, use_hybrid: bool = True, use_reranker: bool = True, use_compression: bool = False, use_hyde: bool = False, use_multi_query: bool = False) -> Dict[str, Any]:
         start_time = time.time()
         trace = []  # Pipeline trace for UI visualization
         
-        # 1. Retrieve
+        # 0. Query Rewriting (HyDE + Multi-Query) — runs on Groq, zero local compute
+        all_query_texts = [query_text]
+        hyde_doc = ""
+        
+        if use_hyde or use_multi_query:
+            t0 = time.time()
+            rewrite_result = self.rewriter.rewrite(query_text, use_hyde=use_hyde, use_multi_query=use_multi_query)
+            rewrite_ms = int((time.time() - t0) * 1000)
+            
+            hyde_doc = rewrite_result.get("hyde_doc", "")
+            alt_queries = rewrite_result.get("alt_queries", [])
+            
+            if alt_queries:
+                all_query_texts.extend(alt_queries)
+            
+            desc_parts = []
+            if use_hyde and hyde_doc:
+                desc_parts.append(f"HyDE doc generated ({len(hyde_doc)} chars)")
+            if use_multi_query and alt_queries:
+                desc_parts.append(f"{len(alt_queries)} alternative queries")
+            
+            trace.append({
+                "step": "Query Rewriting",
+                "description": f"{' + '.join(desc_parts)} via Groq Llama-3.1",
+                "duration_ms": rewrite_ms,
+                "count": len(all_query_texts),
+                "docs": [{"title": q} for q in all_query_texts] + ([{"title": f"[HyDE] {hyde_doc[:80]}..."}] if hyde_doc else []),
+                "icon": "rewrite"
+            })
+        
+        # 1. Retrieve — embed all query variants + HyDE doc, merge results
         if use_hybrid:
             print("Warning: Hybrid retrieval is currently paused. Falling back to Pure Dense Retrieval.")
             use_hybrid = False
             
         fetch_k = k * 3 if use_reranker else k
         
+        # Build list of texts to embed: all queries + HyDE doc (if available)
+        texts_to_embed = list(all_query_texts)
+        if hyde_doc:
+            texts_to_embed.append(hyde_doc)
+        
         t0 = time.time()
-        query_vector = self.embedder.encode([query_text])[0]
+        all_vectors = self.embedder.encode(texts_to_embed)
         embed_ms = int((time.time() - t0) * 1000)
         
+        # Retrieve for each vector and merge (deduplicate by title)
         t0 = time.time()
-        try:
-            hits = self.qdrant.query_points(
-                collection_name=self.collection_name, query=query_vector.tolist(), limit=fetch_k
-            ).points
-            retrieved_docs = [h.payload for h in hits]
-        except Exception as e:
-            print(f"Qdrant Query Error: {e}")
-            retrieved_docs = []
+        seen_titles = set()
+        retrieved_docs = []
+        per_query_k = max(fetch_k // len(all_vectors), 5)
+        
+        for vec in all_vectors:
+            try:
+                hits = self.qdrant.query_points(
+                    collection_name=self.collection_name, query=vec.tolist(), limit=per_query_k
+                ).points
+                for h in hits:
+                    title = h.payload.get("metadata", {}).get("title", "")
+                    if title not in seen_titles:
+                        seen_titles.add(title)
+                        retrieved_docs.append(h.payload)
+            except Exception as e:
+                print(f"Qdrant Query Error: {e}")
         retrieve_ms = int((time.time() - t0) * 1000)
         
+        embed_desc = f"Encoded {len(texts_to_embed)} text(s) into 1024-dim vectors using BGE-M3"
         trace.append({
             "step": "Embedding",
-            "description": f"Encoded query into 1024-dim vector using BGE-M3",
+            "description": embed_desc,
             "duration_ms": embed_ms,
-            "count": 1,
+            "count": len(texts_to_embed),
             "icon": "embed"
         })
         trace.append({
             "step": "Dense Retrieval",
-            "description": f"Retrieved top {len(retrieved_docs)} candidates from Qdrant Cloud ({fetch_k} requested)",
+            "description": f"Retrieved {len(retrieved_docs)} unique candidates from Qdrant Cloud ({len(all_vectors)} searches × {per_query_k} each)",
             "duration_ms": retrieve_ms,
             "count": len(retrieved_docs),
             "docs": [{"title": d.get("metadata", {}).get("title", "Untitled")} for d in retrieved_docs],
