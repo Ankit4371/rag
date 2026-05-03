@@ -30,6 +30,24 @@
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                 </button>
             </form>
+            
+            <div class="pipeline-options">
+                <label class="switch-wrapper">
+                    <input type="checkbox" id="toggle-hybrid" checked>
+                    <span class="switch"></span>
+                    <span class="label">Hybrid Retrieval (BM25)</span>
+                </label>
+                <label class="switch-wrapper">
+                    <input type="checkbox" id="toggle-reranker" checked>
+                    <span class="switch"></span>
+                    <span class="label">Cross-Encoder Reranker</span>
+                </label>
+                <label class="switch-wrapper">
+                    <input type="checkbox" id="toggle-compression">
+                    <span class="switch"></span>
+                    <span class="label">Context Compression (LLMLingua)</span>
+                </label>
+            </div>
 
             <div id="loading" class="hidden">
                 <div class="spinner"></div>
@@ -75,7 +93,12 @@
                 const response = await fetch('/query', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ query })
+                    body: JSON.stringify({ 
+                        query,
+                        use_hybrid: document.getElementById('toggle-hybrid').checked,
+                        use_reranker: document.getElementById('toggle-reranker').checked,
+                        use_compression: document.getElementById('toggle-compression').checked
+                    })
                 });
                 
                 const data = await response.json();

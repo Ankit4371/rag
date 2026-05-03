@@ -17,6 +17,7 @@ dependencies = [
     "datasets",
     "tiktoken",
     "python-dotenv",
+    "llmlingua>=0.2.2",
 ]
 
 [project.optional-dependencies]

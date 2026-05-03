@@ -27,22 +27,44 @@ class RAGPipeline:
         from app.rag.reranker import BGEReranker
         self.reranker = BGEReranker()
         
-    def query(self, query_text: str, k: int = 5) -> Dict[str, Any]:
+        from app.rag.compressor import ContextCompressor
+        self.compressor = ContextCompressor()
+        
+    def query(self, query_text: str, k: int = 5, use_hybrid: bool = True, use_reranker: bool = True, use_compression: bool = False) -> Dict[str, Any]:
         start_time = time.time()
         
-        # 1. Retrieve using Hybrid RRF (Fetch 3x docs for reranking)
-        retrieved_docs = self.retriever.retrieve(query_text, top_k=k * 3)
+        # 1. Retrieve
+        if use_hybrid:
+            fetch_k = k * 3 if use_reranker else k
+            retrieved_docs = self.retriever.retrieve(query_text, top_k=fetch_k)
+        else:
+            fetch_k = k * 3 if use_reranker else k
+            query_vector = self.embedder.encode([query_text])[0]
+            try:
+                hits = self.qdrant.query_points(
+                    collection_name=self.collection_name, query=query_vector.tolist(), limit=fetch_k
+                ).points
+                retrieved_docs = [h.payload for h in hits]
+            except Exception:
+                retrieved_docs = []
         
-        # 2. Rerank down to top_k
-        reranked_docs = self.reranker.rerank(query_text, retrieved_docs, top_k=k)
-        
+        # 2. Rerank
+        if use_reranker and retrieved_docs:
+            final_docs = self.reranker.rerank(query_text, retrieved_docs, top_k=k)
+        else:
+            final_docs = retrieved_docs[:k]
+            
         sources = []
         contexts = []
-        for doc in reranked_docs:
+        for doc in final_docs:
             sources.append(doc.get("metadata", {}))
             contexts.append(doc.get("text", ""))
             
-        # 3. Generate
+        # 3. Compress Contexts
+        if use_compression and contexts:
+            contexts = self.compressor.compress(query_text, contexts)
+            
+        # 4. Generate
         answer = self.generator.generate(query_text, contexts)
         
         latency_ms = int((time.time() - start_time) * 1000)

@@ -178,6 +178,62 @@ h1 {
     transform: scale(1.05);
 }
 
+.pipeline-options {
+    display: flex;
+    justify-content: center;
+    gap: 1.5rem;
+    margin-top: 1.5rem;
+    animation: fadeInUp 0.8s ease-out 0.3s both;
+    flex-wrap: wrap;
+}
+
+.switch-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    transition: color 0.2s;
+}
+
+.switch-wrapper:hover {
+    color: #e2e8f0;
+}
+
+.switch-wrapper input {
+    display: none;
+}
+
+.switch {
+    position: relative;
+    width: 36px;
+    height: 20px;
+    background: var(--glass-border);
+    border-radius: 20px;
+    transition: background 0.3s;
+}
+
+.switch::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    background: white;
+    border-radius: 50%;
+    transition: transform 0.3s;
+}
+
+.switch-wrapper input:checked + .switch {
+    background: var(--accent);
+}
+
+.switch-wrapper input:checked + .switch::after {
+    transform: translateX(16px);
+}
+
 .hidden {
     display: none !important;
 }

@@ -32,6 +32,9 @@ def get_pipeline():
 
 class QueryRequest(BaseModel):
     query: str
+    use_hybrid: bool = True
+    use_reranker: bool = True
+    use_compression: bool = False
     
 class QueryResponse(BaseModel):
     answer: str
@@ -49,7 +52,12 @@ def health_check():
 @app.post("/query", response_model=QueryResponse)
 def query_endpoint(req: QueryRequest):
     p = get_pipeline()
-    res = p.query(req.query)
+    res = p.query(
+        req.query,
+        use_hybrid=req.use_hybrid,
+        use_reranker=req.use_reranker,
+        use_compression=req.use_compression
+    )
     # Remove raw_contexts from API response
     res.pop("raw_contexts", None)
     return res
