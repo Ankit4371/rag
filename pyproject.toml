@@ -18,6 +18,7 @@ dependencies = [
     "tiktoken",
     "python-dotenv",
     "llmlingua>=0.2.2",
+    "cohere",
 ]
 
 [project.optional-dependencies]

@@ -5,6 +5,14 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchAny
 
 class HybridRetriever:
+    """
+    DEPRECATED / PAUSED:
+    This class is kept for historical reference and future iterations.
+    We have moved away from local BM25s sparse indexing in favor of a 15k+ 
+    document dense corpus on Qdrant Cloud. Managing a local sparse index 
+    for massive corpora is inefficient. Future hybrid implementations 
+    should use Qdrant's Native Sparse Vectors directly.
+    """
     def __init__(self, embedder: BGEEmbedder, qdrant: QdrantClient, bm25: BM25Index):
         self.embedder = embedder
         self.qdrant = qdrant

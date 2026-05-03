@@ -40,6 +40,7 @@ class QueryResponse(BaseModel):
     answer: str
     sources: List[Dict[str, Any]]
     latency_ms: int
+    trace: List[Dict[str, Any]] = []
 
 @app.get("/")
 def read_root():
@@ -58,6 +59,6 @@ def query_endpoint(req: QueryRequest):
         use_reranker=req.use_reranker,
         use_compression=req.use_compression
     )
-    # Remove raw_contexts from API response
+    # Remove raw_contexts from API response (keep trace)
     res.pop("raw_contexts", None)
     return res

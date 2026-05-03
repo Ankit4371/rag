@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RAG | ArXiv Explorer</title>
+    <meta name="description" content="An intelligent AI agent querying the bleeding edge of AI research papers from ArXiv.">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/styles.css">
 </head>
@@ -19,7 +20,7 @@
             <p class="subtitle">An intelligent agent querying the bleeding edge of AI research.</p>
             <div class="corpus-badge">
                 <span class="pulse-dot"></span>
-                Corpus: Machine Learning, Computation & Language, and AI papers from arXiv (2023-2026).
+                Corpus: 15,000+ ML, NLP & AI papers from arXiv
             </div>
         </header>
 
@@ -32,10 +33,10 @@
             </form>
             
             <div class="pipeline-options">
-                <label class="switch-wrapper">
-                    <input type="checkbox" id="toggle-hybrid" checked>
-                    <span class="switch"></span>
-                    <span class="label">Hybrid Retrieval (BM25)</span>
+                <label class="switch-wrapper" title="Paused: Local BM25 index is not synced with Qdrant Cloud corpus. Code retained for future native cloud-hybrid implementations.">
+                    <input type="checkbox" id="toggle-hybrid" disabled>
+                    <span class="switch" style="opacity: 0.4;"></span>
+                    <span class="label" style="opacity: 0.4; text-decoration: line-through;">Hybrid Retrieval (BM25)</span>
                 </label>
                 <label class="switch-wrapper">
                     <input type="checkbox" id="toggle-reranker" checked>
@@ -47,6 +48,12 @@
                     <span class="switch"></span>
                     <span class="label">Context Compression (LLMLingua)</span>
                 </label>
+                <span class="options-divider"></span>
+                <label class="switch-wrapper">
+                    <input type="checkbox" id="toggle-trace">
+                    <span class="switch"></span>
+                    <span class="label">Show Pipeline Trace</span>
+                </label>
             </div>
 
             <div id="loading" class="hidden">
@@ -55,14 +62,34 @@
             </div>
 
             <div id="results" class="hidden">
+
+                <!-- Pipeline Trace -->
+                <div class="trace-section hidden" id="trace-section">
+                    <h3 class="section-title">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                        Pipeline Trace
+                    </h3>
+                    <div class="trace-timeline" id="trace-timeline">
+                        <!-- Trace steps injected here -->
+                    </div>
+                </div>
+
+                <!-- AI Answer -->
                 <div class="answer-card glass-panel">
-                    <h3>AI Synthesis</h3>
+                    <h3 class="section-title">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                        AI Synthesis
+                    </h3>
                     <div id="answer-text"></div>
                     <div class="latency" id="latency-text"></div>
                 </div>
 
+                <!-- Sources -->
                 <div class="sources-container">
-                    <h3>Retrieved Sources</h3>
+                    <h3 class="section-title">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                        Retrieved Sources
+                    </h3>
                     <div id="sources-grid" class="sources-grid">
                         <!-- Sources injected here -->
                     </div>
@@ -79,6 +106,63 @@
         const answerText = document.getElementById('answer-text');
         const latencyText = document.getElementById('latency-text');
         const sourcesGrid = document.getElementById('sources-grid');
+        const traceTimeline = document.getElementById('trace-timeline');
+
+        // SVG icons for each pipeline step
+        const traceIcons = {
+            embed: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 8v8"></path><path d="M8 12h8"></path></svg>',
+            search: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>',
+            rerank: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>',
+            compress: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 14 10 14 10 20"></polyline><polyline points="20 10 14 10 14 4"></polyline><line x1="14" y1="10" x2="21" y2="3"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>',
+            generate: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>'
+        };
+
+        function renderTrace(trace) {
+            traceTimeline.innerHTML = '';
+            trace.forEach((step, i) => {
+                const isSkipped = step.description.includes('Skipped');
+                const node = document.createElement('div');
+                node.className = `trace-node ${isSkipped ? 'skipped' : 'active'} fade-in`;
+                node.style.animationDelay = `${i * 0.12}s`;
+
+                const icon = traceIcons[step.icon] || traceIcons['search'];
+
+                // Build expandable doc list if available
+                let docsHtml = '';
+                if (step.docs && step.docs.length > 0 && !isSkipped) {
+                    const docItems = step.docs.map((d, idx) => 
+                        `<li>${idx + 1}. ${d.title}</li>`
+                    ).join('');
+                    docsHtml = `
+                        <details class="trace-docs">
+                            <summary>${step.docs.length} documents</summary>
+                            <ol>${docItems}</ol>
+                        </details>
+                    `;
+                }
+
+                node.innerHTML = `
+                    <div class="trace-icon">${icon}</div>
+                    <div class="trace-content">
+                        <div class="trace-header">
+                            <span class="trace-step-name">${step.step}</span>
+                            <span class="trace-duration ${isSkipped ? 'skipped-badge' : ''}">${isSkipped ? 'SKIPPED' : step.duration_ms + 'ms'}</span>
+                        </div>
+                        <p class="trace-desc">${step.description}</p>
+                        ${docsHtml}
+                    </div>
+                `;
+                traceTimeline.appendChild(node);
+
+                // Add connector line between nodes (except last)
+                if (i < trace.length - 1) {
+                    const connector = document.createElement('div');
+                    connector.className = 'trace-connector fade-in';
+                    connector.style.animationDelay = `${i * 0.12 + 0.06}s`;
+                    traceTimeline.appendChild(connector);
+                }
+            });
+        }
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -103,11 +187,29 @@
                 
                 const data = await response.json();
                 
-                // Populate Answer
+                // 1. Render Pipeline Trace
+                const traceSection = document.getElementById('trace-section');
+                const showTrace = document.getElementById('toggle-trace').checked;
+                if (showTrace && data.trace && data.trace.length > 0) {
+                    renderTrace(data.trace);
+                    traceSection.classList.remove('hidden');
+                } else {
+                    traceSection.classList.add('hidden');
+                }
+
+                // 2. Populate Answer
                 answerText.innerHTML = data.answer.replace(/\n/g, '<br>');
-                latencyText.textContent = `Generated in ${data.latency_ms}ms using Hybrid Retrieval + Cross-Encoder`;
                 
-                // Populate Sources
+                const usedReranker = document.getElementById('toggle-reranker').checked;
+                const usedCompression = document.getElementById('toggle-compression').checked;
+                
+                let pipelinePath = ["Dense Retrieval"];
+                if (usedReranker) pipelinePath.push("Cross-Encoder");
+                if (usedCompression) pipelinePath.push("Compression");
+                
+                latencyText.textContent = `Generated in ${data.latency_ms}ms using ${pipelinePath.join(' → ')}`;
+                
+                // 3. Populate Sources
                 sourcesGrid.innerHTML = '';
                 if (data.sources && data.sources.length > 0) {
                     data.sources.forEach((source, index) => {
@@ -115,16 +217,28 @@
                         card.className = 'source-card glass-panel fade-in';
                         card.style.animationDelay = `${index * 0.1}s`;
                         
+                        const title = source.title || 'Untitled Paper';
+                        let arxivLink = source.arxiv_id && source.arxiv_id !== 'N/A' 
+                            ? `https://arxiv.org/abs/${source.arxiv_id}` 
+                            : `https://arxiv.org/search/?query=${encodeURIComponent(title)}&searchtype=title`;
+                        let arxivText = source.arxiv_id && source.arxiv_id !== 'N/A' ? source.arxiv_id : 'Search ArXiv';
+                        
+                        // Build meta items, only show year if it exists
+                        let metaHtml = '';
+                        if (source.year) {
+                            metaHtml += `<span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg> ${source.year}</span>`;
+                        }
+                        metaHtml += `
+                            <a href="${arxivLink}" target="_blank" rel="noopener noreferrer">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                                ${arxivText}
+                            </a>
+                        `;
+
                         card.innerHTML = `
                             <div class="source-badge">Rank ${index + 1}</div>
-                            <h4>${source.title || 'Unknown Title'}</h4>
-                            <div class="source-meta">
-                                <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg> ${source.year || 'Unknown'}</span>
-                                <a href="https://arxiv.org/abs/${source.arxiv_id}" target="_blank" rel="noopener noreferrer">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
-                                    ${source.arxiv_id || 'N/A'}
-                                </a>
-                            </div>
+                            <h4>${title}</h4>
+                            <div class="source-meta">${metaHtml}</div>
                         `;
                         sourcesGrid.appendChild(card);
                     });
@@ -141,6 +255,7 @@
                 loading.classList.add('hidden');
                 results.classList.remove('hidden');
                 sourcesGrid.innerHTML = '';
+                traceTimeline.innerHTML = '';
             }
         });
     </script>
