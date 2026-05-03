@@ -19,13 +19,13 @@ def test_query_endpoint(monkeypatch):
     # We patch the init
     def mock_init(self):
         self.generator = MockGenerator()
-        self.qdrant = MockQdrant()
-        class MockEmbedder:
-            def encode(self, texts):
-                import numpy as np
-                return np.zeros((len(texts), 1024))
-        self.embedder = MockEmbedder()
         self.collection_name = "rag_docs"
+        
+        class MockRetriever:
+            def retrieve(self, query, top_k=5):
+                return [{"text": "Mock context", "metadata": {"title": "Mock Title", "arxiv_id": "1234.5678"}}]
+        
+        self.retriever = MockRetriever()
         
     monkeypatch.setattr(RAGPipeline, "__init__", mock_init)
     

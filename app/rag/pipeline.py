@@ -17,27 +17,24 @@ class RAGPipeline:
         self.generator = GroqGenerator()
         self.collection_name = "rag_docs"
         
+        from app.rag.sparse import BM25Index
+        self.bm25 = BM25Index()
+        self.bm25.load()
+        
+        from app.rag.retriever import HybridRetriever
+        self.retriever = HybridRetriever(self.embedder, self.qdrant, self.bm25)
+        
     def query(self, query_text: str, k: int = 5) -> Dict[str, Any]:
         start_time = time.time()
         
-        # 1. Retrieve
-        query_vector = self.embedder.encode([query_text])[0]
-        try:
-            search_result = self.qdrant.query_points(
-                collection_name=self.collection_name,
-                query=query_vector.tolist(),
-                limit=k
-            ).points
-        except Exception as e:
-            search_result = []
-            print(f"Retrieval error: {e}")
+        # 1. Retrieve using Hybrid RRF
+        retrieved_docs = self.retriever.retrieve(query_text, top_k=k)
         
         sources = []
         contexts = []
-        for hit in search_result:
-            payload = hit.payload or {}
-            sources.append(payload.get("metadata", {}))
-            contexts.append(payload.get("text", ""))
+        for doc in retrieved_docs:
+            sources.append(doc.get("metadata", {}))
+            contexts.append(doc.get("text", ""))
             
         # 2. Generate
         answer = self.generator.generate(query_text, contexts)
