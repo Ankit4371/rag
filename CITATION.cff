@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+  - family-names: "Kumar"
+    given-names: "Ankit"
+title: "Advanced Production RAG — ArXiv Research Explorer"
+version: 1.0.0
+date-released: 2026-05-03
+url: "https://github.com/Ankit4371/rag"
+repository-code: "https://github.com/Ankit4371/rag"
+keywords:
+  - RAG
+  - NLP
+  - AI
+  - ArXiv
+  - Advanced Retrieval
+  - CRAG
+  - HyDE

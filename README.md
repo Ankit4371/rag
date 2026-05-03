@@ -1,112 +1,110 @@
-# Production RAG — ArXiv Research Explorer
+# 🚀 Advanced Production RAG — ArXiv Research Explorer
 
-A production-grade **Retrieval-Augmented Generation** system built from scratch without LangChain or LlamaIndex. Queries 15,000+ ML/NLP/AI research papers from ArXiv with sub-2-second latency.
+[![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=for-the-badge&logo=fastapi)](https://fastapi.tiangolo.com/)
+[![Qdrant](https://img.shields.io/badge/Qdrant-Vector_DB-ff4131?style=for-the-badge&logo=qdrant)](https://qdrant.tech/)
+[![Groq](https://img.shields.io/badge/Groq-Inference-f55036?style=for-the-badge)](https://groq.com/)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg?style=for-the-badge)](https://opensource.org/licenses/Apache-2.0)
 
-![Python](https://img.shields.io/badge/Python-3.11-blue)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688)
-![Qdrant](https://img.shields.io/badge/Qdrant-Cloud-red)
+A high-performance, **advanced RAG (Retrieval-Augmented Generation)** system designed for production scale. This project goes beyond basic "vector search + LLM" by implementing state-of-the-art techniques like **Corrective RAG (CRAG)**, **Query Rewriting (HyDE)**, and **Multi-Stage Reranking**, all while maintaining a **zero-local-GPU footprint**.
 
-## Architecture
+---
 
+## 🏗️ System Architecture
+
+```mermaid
+graph TD
+    User([User Query]) --> IG[Input Guardrails: PII & Injection]
+    IG --> QR[Query Rewriter: HyDE + Multi-Query]
+    QR --> DR[Dense Retrieval: Qdrant Cloud]
+    DR --> RR[Reranker: Cohere v3 Cross-Encoder]
+    RR --> CG{CRAG Gate}
+    
+    CG -- Low Confidence --> WF[Web Fallback: DuckDuckGo Search]
+    CG -- High Confidence --> CP[Context Compression: LLMLingua-2]
+    
+    WF --> CP
+    CP --> GEN[LLM Generation: Groq Llama-3.1]
+    GEN --> OG[Output Guardrails: Faithfulness & Toxicity]
+    OG --> Result([Final Answer + Citations])
+    
+    subgraph "Production Layer"
+    Cache[(Exact Cache: SQLite)]
+    Cost[Cost & Token Tracker]
+    MCP[MCP Server: Agentic Integration]
+    end
+    
+    User -.-> Cache
+    Result -.-> Cost
 ```
-Query → BGE-M3 Embedding → Qdrant Cloud (Dense Search)
-      → Cohere Reranker (Cross-Encoder)
-      → [Optional] LLMLingua Compression
-      → Groq Llama-3.1 (Generation)
-      → Structured Response + Source Attribution
-```
 
-### Key Design Decisions
+---
 
-| Component | Choice | Rationale |
-|---|---|---|
-| **Embedder** | `BAAI/bge-m3` (1024d) | State-of-the-art multilingual dense embeddings |
-| **Vector DB** | Qdrant Cloud | Scalable managed vector search, zero local infra |
-| **Reranker** | Cohere `rerank-v3` API | Offloaded to cloud for zero local GPU requirement; auto-fallback to local `bge-reranker-v2-m3` |
-| **LLM** | Groq `llama-3.1-8b-instant` | Free tier, ~200ms generation latency |
-| **Compression** | LLMLingua-2 (optional) | Toggle-able context compression for token savings |
-| **Ingestion** | Google Colab + T4 GPU | 15k+ documents embedded and pushed to Qdrant Cloud without straining local resources |
-| **Sparse Index** | BM25S (paused) | Code retained; replaced by Dense+Reranker for cloud-scale corpus |
+## 🌟 Advanced RAG Features
 
-## Features
+### 1. Intelligence & Retrieval
+- **Query Rewriting (HyDE)**: Generates a hypothetical research abstract to align the vector space, dramatically improving similarity matching.
+- **Multi-Query Expansion**: Generates multiple rephrasings of the query to capture diverse semantic angles from the 15k+ document corpus.
+- **Corrective RAG (CRAG)**: An LLM-based "Gate" that evaluates retrieval quality. If retrieval is irrelevant, it triggers an automated **Web Fallback** via DuckDuckGo to prevent hallucinations.
+- **Multi-Stage Reranking**: Uses Cohere v3 (Cross-Encoder) for high-precision ranking, with a local BGE-Reranker fallback.
 
-- **Modular Pipeline**: Toggle Reranker and Compression on/off from the UI
-- **Pipeline Trace**: Optional step-by-step visualization showing timing at each stage (Embed → Retrieve → Rerank → Generate)
-- **Cloud-Native**: All heavy compute offloaded — Qdrant Cloud for search, Cohere for reranking, Groq for generation
-- **Source Attribution**: Every answer links back to specific ArXiv papers
-- **Dark-Themed Glassmorphic UI**: Premium web interface built with vanilla HTML/CSS/JS
+### 2. Production Hardening
+- **Safety Guardrails**: LLM-powered Input/Output guards that detect PII, prompt injection, toxicity, and answer faithfulness.
+- **Context Compression**: Integrates `LLMLingua-2` to compress retrieved contexts by up to 50% while preserving semantics, reducing latency and token costs.
+- **Semantic/Exact Caching**: Local SQLite-based caching to ensure sub-millisecond responses for repeat queries.
+- **Observability**: Real-time **Pipeline Tracing** visualizes every stage (latency, token counts, and intermediate results).
+- **Cost Tracking**: Per-query token estimation and USD cost calculation for Groq/Cohere APIs.
 
-## Quick Start
+### 3. Developer & Agent Tooling
+- **MCP Server**: Fully compatible with the **Model Context Protocol**. Other AI agents (like Claude or Gemini) can use this RAG system as a professional research tool.
+- **Ingest API**: `POST /ingest` endpoint for incremental indexing of PDFs and text files directly into the cloud vector store.
 
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+- [uv](https://github.com/astral-sh/uv) (Extremely fast Python package manager)
+- API Keys: [Groq](https://console.groq.com/), [Qdrant Cloud](https://cloud.qdrant.io/), [Cohere](https://dashboard.cohere.com/)
+
+### Installation
 ```bash
-# 1. Install uv
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# 2. Install dependencies
+# 1. Clone & Install
 make install
 
-# 3. Configure environment
+# 2. Setup Environment
 cp .env.template .env
-# Fill in: GROQ_API_KEY, QDRANT_URL, QDRANT_API_KEY, COHERE_API_KEY
+# Fill in your API keys
 
-# 4. Run the server
+# 3. Start the Dashboard
 make run
-
-# 5. Open http://localhost:8000
 ```
+*The UI is available at `http://localhost:8000`.*
 
-## Environment Variables
+---
 
-| Variable | Required | Description |
+## 📊 Evaluation (RAGAS)
+
+We use the **RAGAS** framework to quantify system performance. Our goal is to maintain high faithfulness and relevancy across the 15,000+ document ArXiv corpus.
+
+| Metric | Target | Description |
 |---|---|---|
-| `GROQ_API_KEY` | ✅ | [Groq Console](https://console.groq.com/) — free tier |
-| `QDRANT_URL` | ✅ | [Qdrant Cloud](https://cloud.qdrant.io/) cluster URL |
-| `QDRANT_API_KEY` | ✅ | Qdrant Cloud API key |
-| `COHERE_API_KEY` | Optional | [Cohere Dashboard](https://dashboard.cohere.com/) — enables cloud reranking (falls back to local model if absent) |
+| **Faithfulness** | > 0.85 | How grounded the answer is in the retrieved sources. |
+| **Answer Relevancy** | > 0.80 | How well the answer addresses the user's specific query. |
+| **Context Precision** | > 0.75 | The quality of the ranking in the retrieved documents. |
 
-## Project Structure
+---
 
-```
-app/
-├── main.py              # FastAPI app, /query and /health endpoints
-├── ingest/
-│   ├── loaders.py       # ArxivLoader — streaming from HuggingFace
-│   ├── chunker.py       # RecursiveChunker — 512-token sliding window
-│   └── build_indices.py # CLI for building dense + sparse indices
-└── rag/
-    ├── pipeline.py      # RAGPipeline — orchestrates the full flow
-    ├── embedder.py      # BGEEmbedder — BAAI/bge-m3 encoding
-    ├── generator.py     # GroqGenerator — Llama-3.1 via Groq API
-    ├── reranker.py      # Reranker — Cohere API or local BGE CrossEncoder
-    ├── compressor.py    # ContextCompressor — LLMLingua-2
-    ├── retriever.py     # HybridRetriever — Dense+BM25 via RRF (paused)
-    └── sparse.py        # BM25Index — BM25S build/save/load (paused)
-static/
-├── index.html           # Web UI
-└── styles.css           # Dark-themed glassmorphic styles
-tests/                   # pytest unit & integration tests
-evals/                   # RAGAS evaluation framework
-```
+## 🛡️ License
 
-## Pipeline Trace
+This project is licensed under the **Apache License 2.0**. This means it is enterprise-ready, handles patent rights explicitly, and allows for commercial use and modification.
 
-When enabled via the UI toggle, every query returns a detailed breakdown:
+---
 
-| Step | Metrics |
-|---|---|
-| **Embedding** | Time to encode query to 1024-dim vector |
-| **Dense Retrieval** | Candidates retrieved from Qdrant Cloud |
-| **Reranking** | Documents reranked via Cohere/local model |
-| **Compression** | Character reduction stats (if enabled) |
-| **LLM Generation** | Groq synthesis time |
+## 👨‍💻 Author
 
-## Data Ingestion (Google Colab)
+**Ankit Kumar** — *AI Engineer / Researcher*
+> "Building RAG systems that don't just search, but reason."
 
-The 15k+ document corpus was embedded on a **free T4 GPU** in Google Colab and pushed directly to Qdrant Cloud. This approach:
-- Avoids straining local CPU/RAM
-- Leverages GPU for fast BGE-M3 encoding
-- Scales to 100k+ documents without local storage
-
-## License
-
-MIT
+---
+*Note: This system was built to solve the 'Lost in the Middle' problem and hallucination risks in large-scale academic search.*
