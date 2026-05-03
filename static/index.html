@@ -58,6 +58,21 @@
                     <span class="switch"></span>
                     <span class="label">Multi-Query</span>
                 </label>
+                <label class="switch-wrapper">
+                    <input type="checkbox" id="toggle-crag">
+                    <span class="switch"></span>
+                    <span class="label">CRAG + Web</span>
+                </label>
+                <label class="switch-wrapper">
+                    <input type="checkbox" id="toggle-guards">
+                    <span class="switch"></span>
+                    <span class="label">Safety Guardrails</span>
+                </label>
+                <label class="switch-wrapper">
+                    <input type="checkbox" id="toggle-cache" checked>
+                    <span class="switch"></span>
+                    <span class="label">Exact Cache</span>
+                </label>
                 <span class="options-divider"></span>
                 <label class="switch-wrapper">
                     <input type="checkbox" id="toggle-trace">
@@ -125,7 +140,9 @@
             rerank: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>',
             compress: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 14 10 14 10 20"></polyline><polyline points="20 10 14 10 14 4"></polyline><line x1="14" y1="10" x2="21" y2="3"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>',
             generate: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>',
-            rewrite: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>'
+            rewrite: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>',
+            crag: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>',
+            shield: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>'
         };
 
         // Lightweight markdown-to-HTML renderer (no external deps)
@@ -225,7 +242,10 @@
                         use_reranker: document.getElementById('toggle-reranker').checked,
                         use_compression: document.getElementById('toggle-compression').checked,
                         use_hyde: document.getElementById('toggle-hyde').checked,
-                        use_multi_query: document.getElementById('toggle-multi-query').checked
+                        use_multi_query: document.getElementById('toggle-multi-query').checked,
+                        use_crag: document.getElementById('toggle-crag').checked,
+                        use_guards: document.getElementById('toggle-guards').checked,
+                        use_cache: document.getElementById('toggle-cache').checked
                     })
                 });
                 
@@ -248,8 +268,13 @@
                 const usedCompression = document.getElementById('toggle-compression').checked;
                 const usedHyde = document.getElementById('toggle-hyde').checked;
                 const usedMultiQuery = document.getElementById('toggle-multi-query').checked;
+                const usedCrag = document.getElementById('toggle-crag').checked;
+                const usedGuards = document.getElementById('toggle-guards').checked;
+                const usedCache = document.getElementById('toggle-cache').checked;
                 
                 let pipelinePath = [];
+                if (data.cached) pipelinePath.push("CACHE HIT");
+                if (usedGuards) pipelinePath.push("Safety");
                 if (usedHyde || usedMultiQuery) {
                     let rw = [];
                     if (usedHyde) rw.push("HyDE");
@@ -258,9 +283,12 @@
                 }
                 pipelinePath.push("Dense Retrieval");
                 if (usedReranker) pipelinePath.push("Reranker");
+                if (usedCrag) pipelinePath.push("CRAG");
                 if (usedCompression) pipelinePath.push("Compression");
+                if (usedGuards) pipelinePath.push("Verification");
                 
-                latencyText.textContent = `Generated in ${data.latency_ms}ms using ${pipelinePath.join(' → ')}`;
+                let costStr = data.cost ? ` | Est. Cost: $${data.cost.estimated_cost_usd}` : '';
+                latencyText.textContent = `Generated in ${data.latency_ms}ms using ${pipelinePath.join(' → ')}${costStr}`;
                 
                 // 3. Populate Sources
                 sourcesGrid.innerHTML = '';

@@ -1,8 +1,9 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, File, UploadFile
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
+import shutil
 from dotenv import load_dotenv
 import os
 
@@ -37,12 +38,17 @@ class QueryRequest(BaseModel):
     use_compression: bool = False
     use_hyde: bool = False
     use_multi_query: bool = False
+    use_crag: bool = False
+    use_guards: bool = False
+    use_cache: bool = True
     
 class QueryResponse(BaseModel):
     answer: str
     sources: List[Dict[str, Any]]
     latency_ms: int
     trace: List[Dict[str, Any]] = []
+    cost: Optional[Dict[str, Any]] = None
+    cached: Optional[bool] = False
 
 @app.get("/")
 def read_root():
@@ -61,8 +67,34 @@ def query_endpoint(req: QueryRequest):
         use_reranker=req.use_reranker,
         use_compression=req.use_compression,
         use_hyde=req.use_hyde,
-        use_multi_query=req.use_multi_query
+        use_multi_query=req.use_multi_query,
+        use_crag=req.use_crag,
+        use_guards=req.use_guards,
+        use_cache=req.use_cache
     )
     # Remove raw_contexts from API response (keep trace)
     res.pop("raw_contexts", None)
     return res
+
+@app.post("/ingest")
+async def ingest_file(file: UploadFile = File(...)):
+    temp_path = f"data/temp_{file.filename}"
+    os.makedirs("data", exist_ok=True)
+    with open(temp_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    
+    p = get_pipeline()
+    from app.ingest.upsert import IncrementalUpserter
+    upserter = IncrementalUpserter(p.embedder, p.qdrant, p.collection_name)
+    
+    try:
+        if file.filename.endswith(".pdf"):
+            num_chunks = upserter.ingest_pdf(temp_path)
+        else:
+            with open(temp_path, "r") as f:
+                num_chunks = upserter.ingest_text(f.read(), {"source": file.filename})
+        
+        return {"status": "success", "chunks_ingested": num_chunks}
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)

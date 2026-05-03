@@ -48,10 +48,77 @@ class RAGPipeline:
         from app.rag.rewriter import QueryRewriter
         self.rewriter = QueryRewriter()
         
-    def query(self, query_text: str, k: int = 5, use_hybrid: bool = True, use_reranker: bool = True, use_compression: bool = False, use_hyde: bool = False, use_multi_query: bool = False) -> Dict[str, Any]:
+        from app.rag.crag_gate import CRAGGate
+        self.crag_gate = CRAGGate()
+        
+        from app.rag.web_fallback import WebFallback
+        self.web_fallback = WebFallback()
+        
+        from app.guards.input import InputGuard
+        self.input_guard = InputGuard()
+        
+        from app.guards.output import OutputGuard
+        self.output_guard = OutputGuard()
+        
+        from app.cache.manager import CacheManager
+        self.cache = CacheManager()
+        
+        from app.obs.cost import CostTracker
+        self.cost_tracker = CostTracker()
+        
+    def query(self, query_text: str, k: int = 5, use_hybrid: bool = True, use_reranker: bool = True, use_compression: bool = False, use_hyde: bool = False, use_multi_query: bool = False, use_crag: bool = False, use_guards: bool = False, use_cache: bool = True) -> Dict[str, Any]:
         start_time = time.time()
+        
+        # 0. Check Cache
+        config = {
+            "k": k, "use_reranker": use_reranker, "use_compression": use_compression,
+            "use_hyde": use_hyde, "use_multi_query": use_multi_query, "use_crag": use_crag,
+            "use_guards": use_guards
+        }
+        if use_cache:
+            cached_res = self.cache.get(query_text, config)
+            if cached_res:
+                cached_res["latency_ms"] = int((time.time() - start_time) * 1000)
+                cached_res["trace"] = [{
+                    "step": "Exact Cache",
+                    "description": "Retrieved response from local SQLite cache",
+                    "duration_ms": cached_res["latency_ms"],
+                    "icon": "search"
+                }]
+                return cached_res
+
         trace = []  # Pipeline trace for UI visualization
         
+        # 0. Input Guardrails
+        if use_guards:
+            t0 = time.time()
+            is_safe, processed_query = self.input_guard.validate(query_text)
+            guard_ms = int((time.time() - t0) * 1000)
+            
+            if not is_safe:
+                return {
+                    "answer": processed_query,
+                    "sources": [],
+                    "latency_ms": guard_ms,
+                    "trace": [{
+                        "step": "Input Guard",
+                        "description": "Query blocked by safety filters",
+                        "duration_ms": guard_ms,
+                        "icon": "shield"
+                    }]
+                }
+            
+            # Use redacted query for processing
+            original_query_text = query_text
+            query_text = processed_query
+            
+            trace.append({
+                "step": "Input Guard",
+                "description": "Query validated for safety and PII",
+                "duration_ms": guard_ms,
+                "icon": "shield"
+            })
+
         # 0. Query Rewriting (HyDE + Multi-Query) — runs on Groq, zero local compute
         all_query_texts = [query_text]
         hyde_doc = ""
@@ -165,8 +232,51 @@ class RAGPipeline:
         for doc in final_docs:
             sources.append(doc.get("metadata", {}))
             contexts.append(doc.get("text", ""))
+        
+        # 3. CRAG Gate — evaluate retrieval quality, fall back to web if needed
+        if use_crag and contexts:
+            t0 = time.time()
+            verdict, reason = self.crag_gate.evaluate(query_text, contexts)
+            crag_ms = int((time.time() - t0) * 1000)
             
-        # 3. Compress Contexts
+            web_docs = []
+            if verdict in ("ambiguous", "incorrect"):
+                t_web = time.time()
+                web_docs = self.web_fallback.search(query_text, max_results=3)
+                web_ms = int((time.time() - t_web) * 1000)
+                crag_ms += web_ms
+                
+                if verdict == "incorrect" and web_docs:
+                    # Full replacement: discard corpus results
+                    contexts = [d["text"] for d in web_docs]
+                    sources = [d["metadata"] for d in web_docs]
+                elif verdict == "ambiguous" and web_docs:
+                    # Augment: add web results to corpus results
+                    contexts.extend([d["text"] for d in web_docs])
+                    sources.extend([d["metadata"] for d in web_docs])
+            
+            web_count = len(web_docs)
+            desc = f"Verdict: {verdict.upper()} — {reason}"
+            if web_count > 0:
+                desc += f" (added {web_count} web results)"
+            
+            trace.append({
+                "step": "CRAG Gate",
+                "description": desc,
+                "duration_ms": crag_ms,
+                "count": len(contexts),
+                "icon": "crag"
+            })
+        else:
+            trace.append({
+                "step": "CRAG Gate",
+                "description": "Skipped (disabled by user)",
+                "duration_ms": 0,
+                "count": len(contexts),
+                "icon": "crag"
+            })
+            
+        # 4. Compress Contexts
         if use_compression and contexts:
             t0 = time.time()
             original_len = sum(len(c) for c in contexts)
@@ -202,12 +312,38 @@ class RAGPipeline:
             "icon": "generate"
         })
         
+        # 5. Output Guardrails
+        if use_guards and contexts:
+            t0 = time.time()
+            is_safe, processed_answer = self.output_guard.validate(query_text, answer, contexts)
+            guard_ms = int((time.time() - t0) * 1000)
+            
+            if not is_safe:
+                answer = processed_answer # This is the error message
+            
+            trace.append({
+                "step": "Output Guard",
+                "description": "Answer verified for toxicity and faithfulness",
+                "duration_ms": guard_ms,
+                "icon": "shield"
+            })
+        
         latency_ms = int((time.time() - start_time) * 1000)
         
-        return {
+        # 6. Track Cost
+        cost_info = self.cost_tracker.track_query(query_text, contexts, answer, use_reranker)
+        
+        response = {
             "answer": answer,
             "sources": sources,
             "latency_ms": latency_ms,
             "trace": trace,
+            "cost": cost_info,
             "raw_contexts": contexts # Useful for evals
         }
+        
+        # 7. Update Cache
+        if use_cache and not use_guards: # Don't cache if guards were on? Or maybe it's fine.
+            self.cache.set(query_text, config, response)
+            
+        return response
