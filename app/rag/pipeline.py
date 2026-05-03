@@ -24,19 +24,25 @@ class RAGPipeline:
         from app.rag.retriever import HybridRetriever
         self.retriever = HybridRetriever(self.embedder, self.qdrant, self.bm25)
         
+        from app.rag.reranker import BGEReranker
+        self.reranker = BGEReranker()
+        
     def query(self, query_text: str, k: int = 5) -> Dict[str, Any]:
         start_time = time.time()
         
-        # 1. Retrieve using Hybrid RRF
-        retrieved_docs = self.retriever.retrieve(query_text, top_k=k)
+        # 1. Retrieve using Hybrid RRF (Fetch 3x docs for reranking)
+        retrieved_docs = self.retriever.retrieve(query_text, top_k=k * 3)
+        
+        # 2. Rerank down to top_k
+        reranked_docs = self.reranker.rerank(query_text, retrieved_docs, top_k=k)
         
         sources = []
         contexts = []
-        for doc in retrieved_docs:
+        for doc in reranked_docs:
             sources.append(doc.get("metadata", {}))
             contexts.append(doc.get("text", ""))
             
-        # 2. Generate
+        # 3. Generate
         answer = self.generator.generate(query_text, contexts)
         
         latency_ms = int((time.time() - start_time) * 1000)

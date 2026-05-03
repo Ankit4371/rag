@@ -22,10 +22,16 @@ def test_query_endpoint(monkeypatch):
         self.collection_name = "rag_docs"
         
         class MockRetriever:
-            def retrieve(self, query, top_k=5):
+            def retrieve(self, query, top_k=15):
                 return [{"text": "Mock context", "metadata": {"title": "Mock Title", "arxiv_id": "1234.5678"}}]
         
         self.retriever = MockRetriever()
+        
+        class MockReranker:
+            def rerank(self, query, docs, top_k=5):
+                return docs[:top_k]
+                
+        self.reranker = MockReranker()
         
     monkeypatch.setattr(RAGPipeline, "__init__", mock_init)
     
