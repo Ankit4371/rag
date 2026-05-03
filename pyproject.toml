@@ -24,6 +24,8 @@ dev = [
     "pytest-asyncio",
     "httpx",
     "ruff",
+    "langchain-groq",
+    "pandas",
 ]
 
 [build-system]
